@@ -1,0 +1,36 @@
+# 依赖
+node_modules/
+package-lock.json
+
+# 环境变量（重要：不要提交 API Key）
+.env
+.env.local
+.env.*.local
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 构建产物
+dist/
+build/
+.cache/
+
+# Claude Code 配置（可选，看你是否想分享）
+.claude/
+
+# 临时文件
+*.tmp
+.temp/
