@@ -9,12 +9,29 @@ interface Message {
   timestamp: Date
 }
 
+// 文档类型
+interface Document {
+  id: string
+  name: string
+  uploadedAt: string
+  chunkCount: number
+}
+
 // 状态管理
 const messages = ref<Message[]>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
 const error = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
+
+// 标签页状态
+const activeTab = ref<'chat' | 'documents'>('chat')
+
+// 文档上传状态
+const documents = ref<Document[]>([])
+const uploading = ref(false)
+const uploadError = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
 
 // 滚动到底部
 const scrollToBottom = () => {
@@ -148,16 +165,117 @@ const handleKeydown = (e: KeyboardEvent) => {
     sendMessage()
   }
 }
+
+// ========== 文档管理功能 ==========
+
+// 加载文档列表
+const loadDocuments = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/documents')
+    const data = await response.json()
+    documents.value = data.documents || []
+  } catch (err) {
+    console.error('加载文档失败:', err)
+  }
+}
+
+// 上传文档
+const handleFileUpload = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+
+  if (!file) return
+
+  if (file.type !== 'application/pdf') {
+    uploadError.value = '只支持 PDF 文件'
+    return
+  }
+
+  uploading.value = true
+  uploadError.value = ''
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch('http://localhost:3000/api/documents/upload', {
+      method: 'POST',
+      body: formData
+    })
+
+    if (!response.ok) {
+      throw new Error('上传失败')
+    }
+
+    const result = await response.json()
+    console.log('上传成功:', result)
+
+    // 重新加载文档列表
+    await loadDocuments()
+
+    // 清空文件输入
+    if (fileInput.value) {
+      fileInput.value.value = ''
+    }
+
+    alert(`文档上传成功！\n\n文件名: ${result.docName}\n文本长度: ${result.textLength} 字符\n切片数量: ${result.chunkCount} 块`)
+  } catch (err) {
+    uploadError.value = '上传失败，请重试'
+    console.error('上传错误:', err)
+  } finally {
+    uploading.value = false
+  }
+}
+
+// 查看文档详情
+const viewDocumentChunks = async (docId: string) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/documents/${docId}/chunks`)
+    const data = await response.json()
+
+    console.log('文档切片详情:', data)
+    alert(`文档: ${data.docName}\n\n切片数量: ${data.chunks.length}\n\n前 3 块预览:\n${data.chunks.slice(0, 3).map((c: any) => `块 ${c.index}: ${c.text} (${c.length} 字符)`).join('\n\n')}`)
+  } catch (err) {
+    console.error('查看详情失败:', err)
+    alert('查看详情失败')
+  }
+}
+
+// 切换标签页时加载文档
+const switchTab = (tab: 'chat' | 'documents') => {
+  activeTab.value = tab
+  if (tab === 'documents') {
+    loadDocuments()
+  }
+}
+
 </script>
 
 <template>
   <div class="chat-container">
     <div class="chat-header">
       <h1>🤖 AI 客服助手</h1>
-      <p>Day 3-4: 流式输出（SSE）</p>
+      <p>Week 2: RAG - 文档处理</p>
+
+      <!-- 标签页切换 -->
+      <div class="tabs">
+        <button
+          :class="['tab', { active: activeTab === 'chat' }]"
+          @click="switchTab('chat')"
+        >
+          💬 聊天
+        </button>
+        <button
+          :class="['tab', { active: activeTab === 'documents' }]"
+          @click="switchTab('documents')"
+        >
+          📄 文档管理
+        </button>
+      </div>
     </div>
 
-    <div class="chat-messages" ref="messagesContainer">
+    <!-- 聊天界面 -->
+    <div v-show="activeTab === 'chat'" class="chat-messages" ref="messagesContainer">
       <div v-if="messages.length === 0" class="empty-state">
         <p>👋 你好！我是 AI 助手，有什么可以帮你的吗？</p>
       </div>
@@ -193,7 +311,58 @@ const handleKeydown = (e: KeyboardEvent) => {
       </div>
     </div>
 
-    <div class="chat-input">
+    <!-- 文档管理界面 -->
+    <div v-show="activeTab === 'documents'" class="documents-view">
+      <div class="upload-section">
+        <h2>📤 上传文档</h2>
+        <p class="hint">支持 PDF 格式，最大 10MB</p>
+
+        <div class="upload-box">
+          <input
+            type="file"
+            ref="fileInput"
+            accept=".pdf"
+            @change="handleFileUpload"
+            :disabled="uploading"
+          />
+          <p v-if="uploading" class="uploading">上传中...</p>
+          <p v-if="uploadError" class="error">{{ uploadError }}</p>
+        </div>
+      </div>
+
+      <div class="documents-section">
+        <h2>📚 已上传文档 ({{ documents.length }})</h2>
+
+        <div v-if="documents.length === 0" class="empty-docs">
+          <p>还没有上传任何文档</p>
+        </div>
+
+        <div v-else class="documents-list">
+          <div
+            v-for="doc in documents"
+            :key="doc.id"
+            class="document-card"
+          >
+            <div class="doc-icon">📄</div>
+            <div class="doc-info">
+              <h3>{{ doc.name }}</h3>
+              <p class="doc-meta">
+                切片数: {{ doc.chunkCount }} |
+                上传时间: {{ new Date(doc.uploadedAt).toLocaleString() }}
+              </p>
+            </div>
+            <button
+              class="view-button"
+              @click="viewDocumentChunks(doc.id)"
+            >
+              查看详情
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-show="activeTab === 'chat'" class="chat-input">
       <div v-if="error" class="error-message">{{ error }}</div>
       <div class="input-wrapper">
         <textarea
@@ -397,5 +566,165 @@ textarea:disabled {
   50%, 100% {
     opacity: 0;
   }
+}
+
+/* ========== 标签页样式 ========== */
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+  justify-content: center;
+}
+
+.tab {
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.tab:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.tab.active {
+  background: white;
+  color: #667eea;
+  border-color: white;
+  font-weight: bold;
+}
+
+/* ========== 文档管理样式 ========== */
+.documents-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.upload-section {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.upload-section h2 {
+  margin: 0 0 5px;
+  color: #333;
+}
+
+.hint {
+  color: #999;
+  font-size: 14px;
+  margin: 0 0 15px;
+}
+
+.upload-box {
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  padding: 30px;
+  text-align: center;
+  transition: border-color 0.3s;
+}
+
+.upload-box:hover {
+  border-color: #667eea;
+}
+
+.upload-box input[type="file"] {
+  font-size: 14px;
+}
+
+.uploading {
+  color: #667eea;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.upload-box .error {
+  color: #c33;
+  margin-top: 10px;
+}
+
+.documents-section {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.documents-section h2 {
+  margin: 0 0 15px;
+  color: #333;
+}
+
+.empty-docs {
+  text-align: center;
+  color: #999;
+  padding: 40px;
+  font-size: 16px;
+}
+
+.documents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.document-card {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  border: 2px solid #eee;
+  border-radius: 8px;
+  transition: all 0.3s;
+}
+
+.document-card:hover {
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+}
+
+.doc-icon {
+  font-size: 40px;
+  flex-shrink: 0;
+}
+
+.doc-info {
+  flex: 1;
+}
+
+.doc-info h3 {
+  margin: 0 0 5px;
+  color: #333;
+  font-size: 16px;
+}
+
+.doc-meta {
+  margin: 0;
+  color: #999;
+  font-size: 13px;
+}
+
+.view-button {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  white-space: nowrap;
+}
+
+.view-button:hover {
+  transform: translateY(-2px);
 }
 </style>
