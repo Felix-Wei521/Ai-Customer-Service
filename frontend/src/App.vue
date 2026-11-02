@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 
 // 消息类型
 interface Message {
@@ -14,8 +14,18 @@ const messages = ref<Message[]>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
 const error = ref('')
+const messagesContainer = ref<HTMLElement | null>(null)
 
-// 发送消息
+// 滚动到底部
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+    }
+  })
+}
+
+// 发送消息（流式版本）
 const sendMessage = async () => {
   if (!inputMessage.value.trim() || isLoading.value) {
     return
@@ -35,9 +45,18 @@ const sendMessage = async () => {
 
   isLoading.value = true
 
+  // 先添加一个空的 AI 消息（用于流式填充）
+  const aiMessageId = Date.now() + 1
+  messages.value.push({
+    id: aiMessageId,
+    role: 'assistant',
+    content: '',
+    timestamp: new Date()
+  })
+
   try {
-    // 调用后端 API
-    const response = await fetch('http://localhost:3000/api/chat', {
+    // 调用流式 API
+    const response = await fetch('http://localhost:3000/api/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -51,18 +70,72 @@ const sendMessage = async () => {
       throw new Error('Network response was not ok')
     }
 
-    const data = await response.json()
+    // 获取流式读取器
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('Failed to get response reader')
+    }
 
-    // 添加 AI 回复到列表
-    messages.value.push({
-      id: Date.now() + 1,
-      role: 'assistant',
-      content: data.reply,
-      timestamp: new Date()
-    })
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    // 逐块读取数据
+    while (true) {
+      const { done, value } = await reader.read()
+
+      if (done) break
+
+      // 解码数据（处理 UTF-8 字符边界）
+      buffer += decoder.decode(value, { stream: true })
+
+      // 按行分割
+      const lines = buffer.split('\n')
+
+      // 保留最后一行（可能不完整）
+      buffer = lines.pop() || ''
+
+      // 处理每一行
+      for (const line of lines) {
+        if (!line.trim() || !line.startsWith('data: ')) continue
+
+        const data = line.replace(/^data: /, '').trim()
+
+        // 检测结束标记
+        if (data === '[DONE]') {
+          break
+        }
+
+        try {
+          const parsed = JSON.parse(data)
+
+          if (parsed.error) {
+            error.value = parsed.error
+            break
+          }
+
+          if (parsed.text) {
+            // 找到最后一条 AI 消息，累加内容
+            const lastMessage = messages.value.find(m => m.id === aiMessageId)
+            if (lastMessage) {
+              lastMessage.content += parsed.text
+              // 每次更新后滚动到底部
+              scrollToBottom()
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse SSE data:', data, e)
+        }
+      }
+    }
+
   } catch (err) {
     error.value = '发送失败，请检查网络连接'
     console.error('Error:', err)
+    // 如果失败，删除空的 AI 消息
+    const index = messages.value.findIndex(m => m.id === aiMessageId)
+    if (index !== -1 && !messages.value[index].content) {
+      messages.value.splice(index, 1)
+    }
   } finally {
     isLoading.value = false
   }
@@ -81,10 +154,10 @@ const handleKeydown = (e: KeyboardEvent) => {
   <div class="chat-container">
     <div class="chat-header">
       <h1>🤖 AI 客服助手</h1>
-      <p>Day 1: 最简单的对话</p>
+      <p>Day 3-4: 流式输出（SSE）</p>
     </div>
 
-    <div class="chat-messages">
+    <div class="chat-messages" ref="messagesContainer">
       <div v-if="messages.length === 0" class="empty-state">
         <p>👋 你好！我是 AI 助手，有什么可以帮你的吗？</p>
       </div>
@@ -98,7 +171,14 @@ const handleKeydown = (e: KeyboardEvent) => {
           {{ msg.role === 'user' ? '👤' : '🤖' }}
         </div>
         <div class="message-content">
-          <div class="message-text">{{ msg.content }}</div>
+          <div class="message-text">
+            {{ msg.content }}
+            <!-- 如果是最后一条 AI 消息且正在加载，显示光标 -->
+            <span
+              v-if="msg.role === 'assistant' && isLoading && msg.id === messages[messages.length - 1]?.id"
+              class="typing-cursor"
+            >▋</span>
+          </div>
           <div class="message-time">
             {{ msg.timestamp.toLocaleTimeString() }}
           </div>
@@ -299,6 +379,23 @@ textarea:disabled {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* 打字光标动画 */
+.typing-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  animation: blink 1s infinite;
+  color: #667eea;
+}
+
+@keyframes blink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
   }
 }
 </style>

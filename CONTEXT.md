@@ -119,25 +119,74 @@
 
 ## 五、当前学习进度
 
-### ✅ Day 1 已完成（2026年11月1日）
+### ✅ Day 1-2 已完成（2026年11月1日）
 
 **完成内容**：
 - ✅ 创建项目结构（frontend + backend）
-- ✅ 后端：Express + OpenAI API（最简单版本）
+- ✅ 后端：Express + Anthropic Claude API
 - ✅ 前端：Vue 3 聊天界面（输入框 + 消息列表）
-- ✅ 功能：用户输入 → 调用 OpenAI → 显示回复
+- ✅ 功能：用户输入 → 调用 Claude API → 显示回复
 - ✅ 文档：README.md + QUICKSTART.md
+- ✅ 配置第三方 API 服务（baseURL）
+- ✅ 代码推送到 GitHub
 
 **学到的知识**：
 - ✅ Vue 3 Composition API
 - ✅ TypeScript 类型定义
 - ✅ Fetch API 调用后端
-- ✅ Express 创建 API
-- ✅ OpenAI API 调用方法
+- ✅ Express 创建 RESTful API
+- ✅ Anthropic Claude API 调用方法
+- ✅ **SDK 概念**：第三方代码库简化 API 调用
+- ✅ 环境变量配置（.env 文件）
+- ✅ 第三方 API 服务配置（baseURL）
+- ✅ API 返回数据解析（处理 thinking 和 text）
+- ✅ Git 版本控制和 GitHub 推送
 
-**下一步**（Day 3-4）：
-- 加入流式输出（SSE）
-- AI 回答一个字一个字蹦出来
+**遇到并解决的问题**：
+- ✅ OpenAI SDK vs Anthropic SDK 的区别
+- ✅ API Key 类型识别（官方 vs 第三方）
+- ✅ Node.js 版本兼容性问题（升级到 22.12.0）
+- ✅ 多个 Node 进程冲突
+- ✅ AWS 渠道模型不可用问题
+- ✅ 第三方服务返回数据格式解析
+
+**GitHub 仓库**：
+https://github.com/Felix-Wei521/Ai-Customer-Service
+
+---
+
+### ✅ Day 3-4 已完成（2026年11月2日）
+
+**完成内容**：
+- ✅ 实现流式输出（SSE + Fetch ReadableStream）
+- ✅ 模拟流式输出（第三方服务不支持真正流式）
+- ✅ 打字机效果 + 光标闪烁
+- ✅ 自动滚动到最新消息
+- ✅ 详细代码注释（server-commented.js、App-commented.vue）
+- ✅ SSE 面试题库（docs/SSE-interview-guide.md）
+
+**学到的知识**：
+- ✅ **SSE 概念**：Server-Sent Events
+- ✅ **SSE vs WebSocket**：单向 vs 双向通信
+- ✅ **Fetch + ReadableStream**：现代流式 API 方案
+- ✅ **UTF-8 字符边界处理**：`{ stream: true }` 的作用
+- ✅ **Buffer 缓冲区**：处理行中间断开的情况
+- ✅ **Vercel AI SDK**：useChat Hook 和 Streamable
+- ✅ **流式中断处理**：前端缓存 + 自动重试
+- ✅ **温度参数（temperature）**：控制 AI 创造性
+- ✅ **Token 计算和成本**：如何估算 AI 应用成本
+
+**技术深度**：
+- ✅ 理解每一行代码的作用
+- ✅ 掌握流式输出的底层原理
+- ✅ 能讲出与 Vercel AI SDK、WebSocket 的对比
+- ✅ 准备好 10+ 道面试题的标准答案
+
+**下一步**（Week 2）：
+- RAG（检索增强生成）— AI 应用工程师核心技能
+- 文档上传 + 文本切片
+- 向量化 + 向量数据库
+- 知识库问答
 
 ---
 
@@ -202,7 +251,11 @@ AI：OpenAI API + RAG
 
 ## 十、更新记录
 
-- **2026-11-01**：Day 1 完成，创建此上下文文件
+- **2026-11-01**：Day 1-2 完成
+  - 完成基础对话功能
+  - 配置 Anthropic Claude API（第三方服务）
+  - 解决 SDK、API Key、模型配置等一系列问题
+  - 代码推送到 GitHub
 - 后续每完成一个阶段，更新此文件
 
 ---
