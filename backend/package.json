@@ -13,12 +13,18 @@
   "description": "",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
+    "@langchain/anthropic": "^1.6.0",
+    "@langchain/core": "^1.3.4",
+    "@langchain/openai": "^1.8.0",
     "@pinecone-database/pinecone": "^8.2.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
+    "langchain": "^1.6.0",
     "multer": "^2.5.0",
+    "node-fetch": "^3.3.2",
     "openai": "^7.47.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "zod": "^4.6.7"
   }
 }
