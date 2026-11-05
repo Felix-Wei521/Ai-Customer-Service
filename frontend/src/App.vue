@@ -27,6 +27,9 @@ const messagesContainer = ref<HTMLElement | null>(null)
 // 标签页状态
 const activeTab = ref<'chat' | 'documents'>('chat')
 
+// Agent 模式选择（改成3选1）
+const chatMode = ref<'normal' | 'anthropic' | 'deepseek'>('normal')
+
 // 文档上传状态
 const documents = ref<Document[]>([])
 const uploading = ref(false)
@@ -42,7 +45,7 @@ const scrollToBottom = () => {
   })
 }
 
-// 发送消息（流式版本）
+// 发送消息（支持3种模式）
 const sendMessage = async () => {
   if (!inputMessage.value.trim() || isLoading.value) {
     return
@@ -62,85 +65,141 @@ const sendMessage = async () => {
 
   isLoading.value = true
 
-  // 先添加一个空的 AI 消息（用于流式填充）
-  const aiMessageId = Date.now() + 1
-  messages.value.push({
-    id: aiMessageId,
-    role: 'assistant',
-    content: '',
-    timestamp: new Date()
-  })
-
   try {
-    // 调用流式 API
-    const response = await fetch('http://localhost:3000/api/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        message: userMessage
+    // 根据模式选择不同的API
+    if (chatMode.value === 'anthropic') {
+      // Anthropic Agent 模式
+      const response = await fetch('http://localhost:3000/api/agent/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: userMessage
+        })
       })
-    })
 
-    if (!response.ok) {
-      throw new Error('Network response was not ok')
-    }
+      if (!response.ok) {
+        throw new Error('Network response was not ok')
+      }
 
-    // 获取流式读取器
-    const reader = response.body?.getReader()
-    if (!reader) {
-      throw new Error('Failed to get response reader')
-    }
+      const data = await response.json()
 
-    const decoder = new TextDecoder()
-    let buffer = ''
+      // 添加 AI 回复
+      messages.value.push({
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: data.reply + (data.iterations > 1 ? `\n\n_🤖 Anthropic · ${data.iterations}轮推理_` : ''),
+        timestamp: new Date()
+      })
+    } else if (chatMode.value === 'deepseek') {
+      // DeepSeek Agent 模式（LangChain）
+      const response = await fetch('http://localhost:3000/api/deepseek/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: userMessage
+        })
+      })
 
-    // 逐块读取数据
-    while (true) {
-      const { done, value } = await reader.read()
+      if (!response.ok) {
+        throw new Error('Network response was not ok')
+      }
 
-      if (done) break
+      const data = await response.json()
 
-      // 解码数据（处理 UTF-8 字符边界）
-      buffer += decoder.decode(value, { stream: true })
+      // 添加 AI 回复
+      const toolInfo = data.toolsUsed && data.toolsUsed.length > 0
+        ? `\n\n_⚡ DeepSeek · 工具: ${data.toolsUsed.join(', ')}_`
+        : ''
 
-      // 按行分割
-      const lines = buffer.split('\n')
+      messages.value.push({
+        id: Date.now() + 1,
+        role: 'assistant',
+        content: data.reply + toolInfo,
+        timestamp: new Date()
+      })
+    } else {
+      // 普通模式：流式输出
+      const aiMessageId = Date.now() + 1
+      messages.value.push({
+        id: aiMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date()
+      })
 
-      // 保留最后一行（可能不完整）
-      buffer = lines.pop() || ''
+      const response = await fetch('http://localhost:3000/api/chat/stream', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: userMessage
+        })
+      })
 
-      // 处理每一行
-      for (const line of lines) {
-        if (!line.trim() || !line.startsWith('data: ')) continue
+      if (!response.ok) {
+        throw new Error('Network response was not ok')
+      }
 
-        const data = line.replace(/^data: /, '').trim()
+      // 获取流式读取器
+      const reader = response.body?.getReader()
+      if (!reader) {
+        throw new Error('Failed to get response reader')
+      }
 
-        // 检测结束标记
-        if (data === '[DONE]') {
-          break
-        }
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-        try {
-          const parsed = JSON.parse(data)
+      // 逐块读取数据
+      while (true) {
+        const { done, value } = await reader.read()
 
-          if (parsed.error) {
-            error.value = parsed.error
+        if (done) break
+
+        // 解码数据（处理 UTF-8 字符边界）
+        buffer += decoder.decode(value, { stream: true })
+
+        // 按行分割
+        const lines = buffer.split('\n')
+
+        // 保留最后一行（可能不完整）
+        buffer = lines.pop() || ''
+
+        // 处理每一行
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue
+
+          const data = line.replace(/^data: /, '').trim()
+
+          // 检测结束标记
+          if (data === '[DONE]') {
             break
           }
 
-          if (parsed.text) {
-            // 找到最后一条 AI 消息，累加内容
-            const lastMessage = messages.value.find(m => m.id === aiMessageId)
-            if (lastMessage) {
-              lastMessage.content += parsed.text
-              // 每次更新后滚动到底部
-              scrollToBottom()
+          try {
+            const parsed = JSON.parse(data)
+
+            if (parsed.error) {
+              error.value = parsed.error
+              break
             }
+
+            if (parsed.text) {
+              // 找到最后一条 AI 消息，累加内容
+              const lastMessage = messages.value.find(m => m.id === aiMessageId)
+              if (lastMessage) {
+                lastMessage.content += parsed.text
+                // 每次更新后滚动到底部
+                scrollToBottom()
+              }
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE data:', data, e)
           }
-        } catch (e) {
-          console.error('Failed to parse SSE data:', data, e)
         }
       }
     }
@@ -148,11 +207,6 @@ const sendMessage = async () => {
   } catch (err) {
     error.value = '发送失败，请检查网络连接'
     console.error('Error:', err)
-    // 如果失败，删除空的 AI 消息
-    const index = messages.value.findIndex(m => m.id === aiMessageId)
-    if (index !== -1 && !messages.value[index].content) {
-      messages.value.splice(index, 1)
-    }
   } finally {
     isLoading.value = false
   }
@@ -255,7 +309,7 @@ const switchTab = (tab: 'chat' | 'documents') => {
   <div class="chat-container">
     <div class="chat-header">
       <h1>🤖 AI 客服助手</h1>
-      <p>Week 2: RAG - 文档处理</p>
+      <p>Week 3: Agent - Tool Calling</p>
 
       <!-- 标签页切换 -->
       <div class="tabs">
@@ -271,6 +325,16 @@ const switchTab = (tab: 'chat' | 'documents') => {
         >
           📄 文档管理
         </button>
+      </div>
+
+      <!-- 聊天模式选择 -->
+      <div v-if="activeTab === 'chat'" class="mode-selector">
+        <label>对话模式：</label>
+        <select v-model="chatMode" class="mode-select">
+          <option value="normal">💬 普通模式（流式输出，快速）</option>
+          <option value="anthropic">🤖 Anthropic Agent（手写ReAct，理解原理）</option>
+          <option value="deepseek">⚡ DeepSeek Agent（LangChain，便宜快速）</option>
+        </select>
       </div>
     </div>
 
@@ -411,6 +475,42 @@ const switchTab = (tab: 'chat' | 'documents') => {
   margin: 5px 0 0;
   opacity: 0.9;
   font-size: 14px;
+}
+
+.mode-selector {
+  margin-top: 15px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-selector label {
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mode-select {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.mode-select:hover {
+  background: white;
+}
+
+.mode-select:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline-offset: 2px;
 }
 
 .chat-messages {

@@ -9,6 +9,11 @@ const fs = require('fs').promises;
 const path = require('path');
 require('dotenv').config();
 
+// LangChain 导入（用于 DeepSeek Agent）
+const { ChatOpenAI } = require("@langchain/openai");
+const { tool } = require("@langchain/core/tools");
+const { z } = require("zod");
+
 const app = express();
 const PORT = 3000;
 
@@ -701,9 +706,405 @@ app.post('/api/chat/stream', async (req, res) => {
   }
 });
 
+// ==================== Agent 功能（Tool Calling） ====================
+
+// 定义工具
+const agentTools = [
+  {
+    name: "search_knowledge_base",
+    description: "从知识库中搜索相关信息，适用于查找产品信息、公司政策、用户资料等。会使用向量搜索找到最相关的文档内容。",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "搜索关键词或问题"
+        }
+      },
+      required: ["query"]
+    }
+  },
+  {
+    name: "calculator",
+    description: "执行数学计算，支持基本的四则运算（加减乘除）和括号",
+    input_schema: {
+      type: "object",
+      properties: {
+        expression: {
+          type: "string",
+          description: "数学表达式，如 '599 * 0.8' 或 '(100 + 50) / 2'"
+        }
+      },
+      required: ["expression"]
+    }
+  },
+  {
+    name: "get_order_info",
+    description: "查询订单信息，包括订单状态、金额、物流信息等",
+    input_schema: {
+      type: "object",
+      properties: {
+        order_id: {
+          type: "string",
+          description: "订单号"
+        }
+      },
+      required: ["order_id"]
+    }
+  }
+];
+
+// 工具执行函数
+async function executeSearchKnowledgeBase(query) {
+  console.log(`🔧 [工具] search_knowledge_base: "${query}"`);
+
+  // 复用现有的 RAG 搜索逻辑
+  try {
+    // 1. 生成查询向量
+    const embeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: query,
+    });
+    const queryVector = embeddingResponse.data[0].embedding;
+
+    // 2. 向量搜索
+    if (pineconeIndex) {
+      const searchResults = await pineconeIndex.namespace('default').query({
+        vector: queryVector,
+        topK: 3,
+        includeMetadata: true,
+      });
+
+      if (searchResults.matches && searchResults.matches.length > 0) {
+        const results = searchResults.matches.map(match =>
+          `${match.metadata.text} (相似度: ${(match.score * 100).toFixed(1)}%)`
+        ).join('\n\n');
+        console.log(`   ✅ 找到 ${searchResults.matches.length} 条结果`);
+        return `知识库搜索结果：\n${results}`;
+      }
+    }
+
+    // 3. 兜底：内存搜索
+    if (documentChunks.length > 0) {
+      const matchedChunks = documentChunks.filter(chunk =>
+        chunk.text.includes(query) || query.includes(chunk.text.substring(0, 10))
+      ).slice(0, 3);
+
+      if (matchedChunks.length > 0) {
+        const results = matchedChunks.map(chunk => chunk.text).join('\n\n');
+        console.log(`   ✅ 内存搜索找到 ${matchedChunks.length} 条结果`);
+        return `知识库搜索结果：\n${results}`;
+      }
+    }
+
+    console.log(`   ⚠️ 未找到相关信息`);
+    return "未找到相关信息。知识库可能为空，请先上传文档。";
+  } catch (error) {
+    console.error(`   ❌ 搜索失败:`, error.message);
+    return `搜索失败: ${error.message}`;
+  }
+}
+
+function executeCalculator(expression) {
+  console.log(`🔧 [工具] calculator: "${expression}"`);
+  try {
+    // 安全检查：只允许数字和运算符
+    if (!/^[\d+\-*/().\s]+$/.test(expression)) {
+      throw new Error("只支持数字和基本运算符");
+    }
+    const result = eval(expression);
+    console.log(`   ✅ 结果: ${result}`);
+    return `计算结果: ${result}`;
+  } catch (error) {
+    console.log(`   ❌ 计算失败`);
+    return `计算失败: ${error.message}`;
+  }
+}
+
+function executeGetOrderInfo(order_id) {
+  console.log(`🔧 [工具] get_order_info: "${order_id}"`);
+
+  // 模拟订单数据
+  const mockOrders = {
+    "ORD001": { status: "已发货", amount: 299, tracking: "SF1234567890", product: "基础版会员" },
+    "ORD002": { status: "待支付", amount: 599, tracking: null, product: "专业版会员" },
+    "ORD003": { status: "已完成", amount: 199, tracking: "YT9876543210", product: "入门版会员" }
+  };
+
+  const order = mockOrders[order_id];
+  if (order) {
+    console.log(`   ✅ 找到订单`);
+    return `订单信息：\n` +
+           `- 订单号: ${order_id}\n` +
+           `- 商品: ${order.product}\n` +
+           `- 金额: ${order.amount}元\n` +
+           `- 状态: ${order.status}\n` +
+           (order.tracking ? `- 物流单号: ${order.tracking}` : `- 待发货`);
+  } else {
+    console.log(`   ⚠️ 订单不存在`);
+    return `未找到订单 ${order_id}，请检查订单号是否正确。`;
+  }
+}
+
+// Agent 聊天接口（支持 Tool Calling）
+app.post('/api/agent/chat', async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    console.log('\n🤖 [Agent模式] 用户消息:', message);
+
+    const messages = [{ role: 'user', content: message }];
+    let continueLoop = true;
+    let iterationCount = 0;
+    const maxIterations = 5;
+    let finalReply = '';
+
+    // ReAct 循环
+    while (continueLoop && iterationCount < maxIterations) {
+      iterationCount++;
+      console.log(`\n🔄 [第${iterationCount}轮推理]`);
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 2048,
+        tools: agentTools,
+        messages: messages,
+        system: "你是一个智能客服助手。回答用户问题时，优先使用工具获取准确信息：\n" +
+                "- 遇到知识查询类问题，使用 search_knowledge_base\n" +
+                "- 遇到计算问题，使用 calculator\n" +
+                "- 遇到订单查询，使用 get_order_info\n" +
+                "不要凭空回答，必须基于工具返回的结果。"
+      });
+
+      console.log(`   Stop reason: ${response.stop_reason}`);
+
+      // 处理响应
+      let hasToolUse = false;
+
+      for (const content of response.content) {
+        if (content.type === 'text') {
+          console.log(`   💬 AI思考: ${content.text.substring(0, 100)}...`);
+          finalReply = content.text;
+        } else if (content.type === 'tool_use') {
+          hasToolUse = true;
+          console.log(`   🤖 决策调用: ${content.name}`);
+
+          // 执行工具
+          let toolResult;
+          if (content.name === 'search_knowledge_base') {
+            toolResult = await executeSearchKnowledgeBase(content.input.query);
+          } else if (content.name === 'calculator') {
+            toolResult = executeCalculator(content.input.expression);
+          } else if (content.name === 'get_order_info') {
+            toolResult = executeGetOrderInfo(content.input.order_id);
+          } else {
+            toolResult = "未知工具";
+          }
+
+          // 将工具结果返回给 AI
+          messages.push({
+            role: "assistant",
+            content: response.content
+          });
+
+          messages.push({
+            role: "user",
+            content: [{
+              type: "tool_result",
+              tool_use_id: content.id,
+              content: toolResult
+            }]
+          });
+
+          break; // 跳出循环，进入下一轮推理
+        }
+      }
+
+      // 判断是否结束
+      if (response.stop_reason === 'end_turn' && !hasToolUse) {
+        continueLoop = false;
+        console.log(`   ✅ 推理完成`);
+      }
+    }
+
+    if (iterationCount >= maxIterations) {
+      console.log(`   ⚠️ 达到最大迭代次数`);
+    }
+
+    res.json({
+      reply: finalReply,
+      mode: 'agent',
+      iterations: iterationCount
+    });
+
+  } catch (error) {
+    console.error('❌ Agent 错误:', error);
+    res.status(500).json({
+      error: error.message,
+      details: '请检查 API 配置和模型可用性'
+    });
+  }
+});
+
+// ==================== DeepSeek Agent（LangChain标准用法） ====================
+
+// 定义 LangChain 工具
+const langchainSearchTool = tool(
+  async ({ query }) => {
+    console.log(`🔧 [LangChain工具] search_knowledge_base: "${query}"`);
+    // 复用现有的搜索逻辑
+    return await executeSearchKnowledgeBase(query);
+  },
+  {
+    name: "search_knowledge_base",
+    description: "从知识库中搜索相关信息，使用向量搜索找到最相关的文档内容",
+    schema: z.object({
+      query: z.string().describe("搜索关键词或问题")
+    })
+  }
+);
+
+const langchainCalculatorTool = tool(
+  async ({ expression }) => {
+    console.log(`🔧 [LangChain工具] calculator: "${expression}"`);
+    return executeCalculator(expression);
+  },
+  {
+    name: "calculator",
+    description: "执行数学计算，支持基本的四则运算",
+    schema: z.object({
+      expression: z.string().describe("数学表达式，如 '599 * 0.8'")
+    })
+  }
+);
+
+const langchainOrderTool = tool(
+  async ({ order_id }) => {
+    console.log(`🔧 [LangChain工具] get_order_info: "${order_id}"`);
+    return executeGetOrderInfo(order_id);
+  },
+  {
+    name: "get_order_info",
+    description: "查询订单信息，包括订单状态、金额、物流信息等",
+    schema: z.object({
+      order_id: z.string().describe("订单号")
+    })
+  }
+);
+
+// DeepSeek Agent 接口（LangChain 标准用法）
+app.post('/api/deepseek/chat', async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    console.log('\n⚡ [DeepSeek Agent] 用户消息:', message);
+
+    // 初始化 DeepSeek 模型
+    const model = new ChatOpenAI({
+      modelName: "deepseek-chat",
+      temperature: 0,
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      configuration: {
+        baseURL: "https://api.deepseek.com"
+      }
+    });
+
+    // 绑定工具
+    const modelWithTools = model.bindTools([
+      langchainSearchTool,
+      langchainCalculatorTool,
+      langchainOrderTool
+    ]);
+
+    // 第一次调用：让 AI 决定是否使用工具
+    console.log('   🤖 AI 正在分析问题...');
+    const response = await modelWithTools.invoke([
+      {
+        role: "system",
+        content: "你是一个智能客服助手。遇到需要查询知识、计算或查订单的问题时，使用相应的工具获取准确信息。"
+      },
+      {
+        role: "user",
+        content: message
+      }
+    ]);
+
+    let finalReply = '';
+    let toolsUsed = [];
+
+    // 检查是否需要调用工具
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      console.log(`   🔧 需要调用 ${response.tool_calls.length} 个工具`);
+
+      // 执行所有工具调用
+      const toolResults = [];
+      for (const toolCall of response.tool_calls) {
+        console.log(`   - ${toolCall.name}(${JSON.stringify(toolCall.args)})`);
+        toolsUsed.push(toolCall.name);
+
+        let result;
+        if (toolCall.name === 'search_knowledge_base') {
+          result = await langchainSearchTool.invoke(toolCall.args);
+        } else if (toolCall.name === 'calculator') {
+          result = await langchainCalculatorTool.invoke(toolCall.args);
+        } else if (toolCall.name === 'get_order_info') {
+          result = await langchainOrderTool.invoke(toolCall.args);
+        }
+
+        toolResults.push({
+          role: "tool",
+          content: result,
+          tool_call_id: toolCall.id
+        });
+      }
+
+      // 第二次调用：带着工具结果生成最终回复
+      console.log('   💬 AI 正在生成最终回复...');
+      const finalResponse = await model.invoke([
+        { role: "system", content: "你是一个智能客服助手。" },
+        { role: "user", content: message },
+        { role: "assistant", content: "", tool_calls: response.tool_calls },
+        ...toolResults
+      ]);
+
+      finalReply = finalResponse.content;
+    } else {
+      // 不需要工具，直接回答
+      console.log('   💬 不需要工具，直接回答');
+      finalReply = response.content;
+    }
+
+    console.log(`   ✅ 回复完成`);
+
+    res.json({
+      reply: finalReply,
+      mode: 'deepseek-agent',
+      toolsUsed: toolsUsed,
+      framework: 'LangChain'
+    });
+
+  } catch (error) {
+    console.error('❌ DeepSeek Agent 错误:', error);
+    res.status(500).json({
+      error: error.message,
+      details: '请检查 DeepSeek API Key 和网络连接'
+    });
+  }
+});
+
 // 启动服务器
 app.listen(PORT, () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📝 API: http://localhost:${PORT}/api/chat`);
   console.log(`🌊 Stream API: http://localhost:${PORT}/api/chat/stream`);
+  console.log(`🤖 Anthropic Agent API: http://localhost:${PORT}/api/agent/chat`);
+  console.log(`⚡ DeepSeek Agent API: http://localhost:${PORT}/api/deepseek/chat`);
 });
