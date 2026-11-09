@@ -708,6 +708,49 @@ app.post('/api/chat/stream', async (req, res) => {
 
 // ==================== Agent 功能（Tool Calling） ====================
 
+// 工具执行包装器（带异常处理）
+async function executeToolWithRetry(toolFunc, toolName, params, maxRetries = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`   🔧 [尝试 ${attempt}/${maxRetries}] ${toolName}`);
+
+      // 执行工具（带超时保护）
+      const timeoutMs = 5000; // 5秒超时
+      const result = await Promise.race([
+        toolFunc(params),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('工具执行超时（5秒）')), timeoutMs)
+        )
+      ]);
+
+      // 检查结果是否有效
+      if (!result || result.trim() === '') {
+        throw new Error('工具返回空结果');
+      }
+
+      console.log(`   ✅ 执行成功`);
+      return result;
+
+    } catch (error) {
+      lastError = error;
+      console.log(`   ⚠️ 尝试 ${attempt} 失败: ${error.message}`);
+
+      // 如果还有重试机会，等待后重试（指数退避）
+      if (attempt < maxRetries) {
+        const waitTime = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
+        console.log(`   ⏳ 等待 ${waitTime}ms 后重试...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+
+  // 所有重试都失败了
+  console.log(`   ❌ 全部重试失败`);
+  return `工具执行失败（${toolName}）: ${lastError.message}。请稍后重试或联系管理员。`;
+}
+
 // 定义工具
 const agentTools = [
   {
@@ -754,75 +797,79 @@ const agentTools = [
   }
 ];
 
-// 工具执行函数
+// 工具执行函数（已优化，带详细日志）
 async function executeSearchKnowledgeBase(query) {
-  console.log(`🔧 [工具] search_knowledge_base: "${query}"`);
+  // 参数验证
+  if (!query || query.trim() === '') {
+    throw new Error('搜索关键词不能为空');
+  }
 
   // 复用现有的 RAG 搜索逻辑
-  try {
-    // 1. 生成查询向量
-    const embeddingResponse = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: query,
+  // 1. 生成查询向量
+  const embeddingResponse = await openai.embeddings.create({
+    model: 'text-embedding-3-small',
+    input: query,
+  });
+  const queryVector = embeddingResponse.data[0].embedding;
+
+  // 2. 向量搜索
+  if (pineconeIndex) {
+    const searchResults = await pineconeIndex.namespace('default').query({
+      vector: queryVector,
+      topK: 3,
+      includeMetadata: true,
     });
-    const queryVector = embeddingResponse.data[0].embedding;
 
-    // 2. 向量搜索
-    if (pineconeIndex) {
-      const searchResults = await pineconeIndex.namespace('default').query({
-        vector: queryVector,
-        topK: 3,
-        includeMetadata: true,
-      });
-
-      if (searchResults.matches && searchResults.matches.length > 0) {
-        const results = searchResults.matches.map(match =>
-          `${match.metadata.text} (相似度: ${(match.score * 100).toFixed(1)}%)`
-        ).join('\n\n');
-        console.log(`   ✅ 找到 ${searchResults.matches.length} 条结果`);
-        return `知识库搜索结果：\n${results}`;
-      }
+    if (searchResults.matches && searchResults.matches.length > 0) {
+      const results = searchResults.matches.map(match =>
+        `${match.metadata.text} (相似度: ${(match.score * 100).toFixed(1)}%)`
+      ).join('\n\n');
+      return `知识库搜索结果：\n${results}`;
     }
-
-    // 3. 兜底：内存搜索
-    if (documentChunks.length > 0) {
-      const matchedChunks = documentChunks.filter(chunk =>
-        chunk.text.includes(query) || query.includes(chunk.text.substring(0, 10))
-      ).slice(0, 3);
-
-      if (matchedChunks.length > 0) {
-        const results = matchedChunks.map(chunk => chunk.text).join('\n\n');
-        console.log(`   ✅ 内存搜索找到 ${matchedChunks.length} 条结果`);
-        return `知识库搜索结果：\n${results}`;
-      }
-    }
-
-    console.log(`   ⚠️ 未找到相关信息`);
-    return "未找到相关信息。知识库可能为空，请先上传文档。";
-  } catch (error) {
-    console.error(`   ❌ 搜索失败:`, error.message);
-    return `搜索失败: ${error.message}`;
   }
+
+  // 3. 兜底：内存搜索
+  if (documentChunks.length > 0) {
+    const matchedChunks = documentChunks.filter(chunk =>
+      chunk.text.includes(query) || query.includes(chunk.text.substring(0, 10))
+    ).slice(0, 3);
+
+    if (matchedChunks.length > 0) {
+      const results = matchedChunks.map(chunk => chunk.text).join('\n\n');
+      return `知识库搜索结果：\n${results}`;
+    }
+  }
+
+  // 没找到任何结果
+  throw new Error('未找到相关信息，知识库可能为空，请先上传文档');
 }
 
 function executeCalculator(expression) {
-  console.log(`🔧 [工具] calculator: "${expression}"`);
-  try {
-    // 安全检查：只允许数字和运算符
-    if (!/^[\d+\-*/().\s]+$/.test(expression)) {
-      throw new Error("只支持数字和基本运算符");
-    }
-    const result = eval(expression);
-    console.log(`   ✅ 结果: ${result}`);
-    return `计算结果: ${result}`;
-  } catch (error) {
-    console.log(`   ❌ 计算失败`);
-    return `计算失败: ${error.message}`;
+  // 参数验证
+  if (!expression || expression.trim() === '') {
+    throw new Error('计算表达式不能为空');
   }
+
+  // 安全检查：只允许数字和运算符
+  if (!/^[\d+\-*/().\s]+$/.test(expression)) {
+    throw new Error('只支持数字和基本运算符（+ - * / ()）');
+  }
+
+  const result = eval(expression);
+
+  // 检查结果是否有效
+  if (isNaN(result) || !isFinite(result)) {
+    throw new Error('计算结果无效');
+  }
+
+  return `计算结果: ${result}`;
 }
 
 function executeGetOrderInfo(order_id) {
-  console.log(`🔧 [工具] get_order_info: "${order_id}"`);
+  // 参数验证
+  if (!order_id || order_id.trim() === '') {
+    throw new Error('订单号不能为空');
+  }
 
   // 模拟订单数据
   const mockOrders = {
@@ -832,18 +879,16 @@ function executeGetOrderInfo(order_id) {
   };
 
   const order = mockOrders[order_id];
-  if (order) {
-    console.log(`   ✅ 找到订单`);
-    return `订单信息：\n` +
-           `- 订单号: ${order_id}\n` +
-           `- 商品: ${order.product}\n` +
-           `- 金额: ${order.amount}元\n` +
-           `- 状态: ${order.status}\n` +
-           (order.tracking ? `- 物流单号: ${order.tracking}` : `- 待发货`);
-  } else {
-    console.log(`   ⚠️ 订单不存在`);
-    return `未找到订单 ${order_id}，请检查订单号是否正确。`;
+  if (!order) {
+    throw new Error(`订单 ${order_id} 不存在，请检查订单号是否正确`);
   }
+
+  return `订单信息：\n` +
+         `- 订单号: ${order_id}\n` +
+         `- 商品: ${order.product}\n` +
+         `- 金额: ${order.amount}元\n` +
+         `- 状态: ${order.status}\n` +
+         (order.tracking ? `- 物流单号: ${order.tracking}` : `- 待发货`);
 }
 
 // Agent 聊天接口（支持 Tool Calling）
@@ -893,14 +938,26 @@ app.post('/api/agent/chat', async (req, res) => {
           hasToolUse = true;
           console.log(`   🤖 决策调用: ${content.name}`);
 
-          // 执行工具
+          // 执行工具（带异常处理和重试）
           let toolResult;
           if (content.name === 'search_knowledge_base') {
-            toolResult = await executeSearchKnowledgeBase(content.input.query);
+            toolResult = await executeToolWithRetry(
+              executeSearchKnowledgeBase,
+              'search_knowledge_base',
+              content.input.query
+            );
           } else if (content.name === 'calculator') {
-            toolResult = executeCalculator(content.input.expression);
+            toolResult = await executeToolWithRetry(
+              executeCalculator,
+              'calculator',
+              content.input.expression
+            );
           } else if (content.name === 'get_order_info') {
-            toolResult = executeGetOrderInfo(content.input.order_id);
+            toolResult = await executeToolWithRetry(
+              executeGetOrderInfo,
+              'get_order_info',
+              content.input.order_id
+            );
           } else {
             toolResult = "未知工具";
           }
@@ -932,12 +989,13 @@ app.post('/api/agent/chat', async (req, res) => {
     }
 
     if (iterationCount >= maxIterations) {
-      console.log(`   ⚠️ 达到最大迭代次数`);
+      console.log(`   ⚠️ 达到最大迭代次数(${maxIterations})，推理结束`);
+      finalReply += `\n\n_⚠️ 注意：已达到最大推理轮数(${maxIterations}轮)，可能未完全解决问题_`;
     }
 
     res.json({
       reply: finalReply,
-      mode: 'agent',
+      mode: 'anthropic-agent',
       iterations: iterationCount
     });
 
