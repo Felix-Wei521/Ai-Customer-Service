@@ -1117,19 +1117,29 @@ app.post('/api/deepseek/chat', async (req, res) => {
     if (response.tool_calls && response.tool_calls.length > 0) {
       console.log(`   🔧 需要调用 ${response.tool_calls.length} 个工具`);
 
-      // 执行所有工具调用
+      // 执行所有工具调用（带异常处理）
       const toolResults = [];
       for (const toolCall of response.tool_calls) {
         console.log(`   - ${toolCall.name}(${JSON.stringify(toolCall.args)})`);
         toolsUsed.push(toolCall.name);
 
         let result;
-        if (toolCall.name === 'search_knowledge_base') {
-          result = await langchainSearchTool.invoke(toolCall.args);
-        } else if (toolCall.name === 'calculator') {
-          result = await langchainCalculatorTool.invoke(toolCall.args);
-        } else if (toolCall.name === 'get_order_info') {
-          result = await langchainOrderTool.invoke(toolCall.args);
+        try {
+          console.log(`   🔧 开始执行工具: ${toolCall.name}`);
+          if (toolCall.name === 'search_knowledge_base') {
+            result = await langchainSearchTool.invoke(toolCall.args);
+          } else if (toolCall.name === 'calculator') {
+            result = await langchainCalculatorTool.invoke(toolCall.args);
+          } else if (toolCall.name === 'get_order_info') {
+            result = await langchainOrderTool.invoke(toolCall.args);
+          } else {
+            result = "未知工具";
+          }
+          console.log(`   ✅ 工具执行成功: ${result.substring(0, 50)}...`);
+        } catch (error) {
+          // 工具执行失败，返回错误信息（不让整个请求崩溃）
+          console.log(`   ❌ [捕获异常] 工具 ${toolCall.name} 执行失败: ${error.message}`);
+          result = `工具执行失败: ${error.message}`;
         }
 
         toolResults.push({
@@ -1141,14 +1151,24 @@ app.post('/api/deepseek/chat', async (req, res) => {
 
       // 第二次调用：带着工具结果生成最终回复
       console.log('   💬 AI 正在生成最终回复...');
-      const finalResponse = await model.invoke([
-        { role: "system", content: "你是一个智能客服助手。" },
-        { role: "user", content: message },
-        { role: "assistant", content: "", tool_calls: response.tool_calls },
-        ...toolResults
-      ]);
-
-      finalReply = finalResponse.content;
+      try {
+        const finalResponse = await model.invoke([
+          { role: "system", content: "你是一个智能客服助手。" },
+          { role: "user", content: message },
+          { role: "assistant", content: "", tool_calls: response.tool_calls },
+          ...toolResults
+        ]);
+        finalReply = finalResponse.content;
+      } catch (error) {
+        // AI 生成回复失败，手动构造友好回复
+        console.log(`   ❌ AI 生成最终回复失败: ${error.message}`);
+        const toolErrors = toolResults.filter(r => r.content.includes('执行失败'));
+        if (toolErrors.length > 0) {
+          finalReply = `抱歉，处理您的请求时遇到了一些问题：${toolErrors[0].content}。请稍后重试或联系客服。`;
+        } else {
+          finalReply = `抱歉，处理您的请求时遇到了问题。请稍后重试。`;
+        }
+      }
     } else {
       // 不需要工具，直接回答
       console.log('   💬 不需要工具，直接回答');
