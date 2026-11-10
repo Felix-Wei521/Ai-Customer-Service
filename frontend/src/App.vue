@@ -66,6 +66,14 @@ const sendMessage = async () => {
   isLoading.value = true
 
   try {
+    // 准备对话历史（最近5轮，每轮2条消息）
+    const recentHistory = messages.value
+      .slice(-10)  // 最近10条消息 = 5轮对话
+      .map(m => ({
+        role: m.role,
+        content: m.content.replace(/\n\n_.*_$/, '')  // 移除标记（如"🤖 Anthropic · 2轮推理"）
+      }));
+
     // 根据模式选择不同的API
     if (chatMode.value === 'anthropic') {
       // Anthropic Agent 模式
@@ -75,7 +83,8 @@ const sendMessage = async () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          message: userMessage
+          message: userMessage,
+          history: recentHistory  // ✅ 发送对话历史
         })
       })
 
@@ -100,7 +109,8 @@ const sendMessage = async () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          message: userMessage
+          message: userMessage,
+          history: recentHistory  // ✅ 发送对话历史
         })
       })
 

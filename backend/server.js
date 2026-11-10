@@ -891,18 +891,33 @@ function executeGetOrderInfo(order_id) {
          (order.tracking ? `- 物流单号: ${order.tracking}` : `- 待发货`);
 }
 
-// Agent 聊天接口（支持 Tool Calling）
+// Agent 聊天接口（支持 Tool Calling + 对话历史）
 app.post('/api/agent/chat', async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, history } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
-    console.log('\n🤖 [Agent模式] 用户消息:', message);
+    console.log('\n🤖 [Anthropic Agent] 用户消息:', message);
+    if (history && history.length > 0) {
+      console.log(`   📜 对话历史: ${history.length} 条消息`);
+    }
 
-    const messages = [{ role: 'user', content: message }];
+    // 构建消息列表（包含历史）
+    const messages = [];
+
+    // 添加对话历史（如果有）
+    if (history && history.length > 0) {
+      // 过滤掉可能的空消息
+      const validHistory = history.filter(h => h.role && h.content);
+      messages.push(...validHistory);
+    }
+
+    // 添加当前用户消息
+    messages.push({ role: 'user', content: message });
+
     let continueLoop = true;
     let iterationCount = 0;
     const maxIterations = 5;
