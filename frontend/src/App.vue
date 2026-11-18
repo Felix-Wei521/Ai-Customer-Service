@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
+import { marked } from 'marked'
+
+// 配置 marked
+marked.setOptions({
+  breaks: true, // 支持单个换行符（GitHub 风格）
+  gfm: true,    // 启用 GitHub Flavored Markdown
+})
 
 // 消息类型
 interface Message {
@@ -43,6 +50,11 @@ const scrollToBottom = () => {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
     }
   })
+}
+
+// Markdown 渲染函数
+const renderMarkdown = (text: string) => {
+  return marked(text)
 }
 
 // 发送消息（支持3种模式）
@@ -363,14 +375,17 @@ const switchTab = (tab: 'chat' | 'documents') => {
           {{ msg.role === 'user' ? '👤' : '🤖' }}
         </div>
         <div class="message-content">
-          <div class="message-text">
+          <!-- 用户消息：纯文本显示 -->
+          <div v-if="msg.role === 'user'" class="message-text">
             {{ msg.content }}
+          </div>
+          <!-- AI 消息：Markdown 渲染 -->
+          <div v-else class="message-text markdown-body" v-html="renderMarkdown(msg.content)"></div>
             <!-- 如果是最后一条 AI 消息且正在加载，显示光标 -->
             <span
               v-if="msg.role === 'assistant' && isLoading && msg.id === messages[messages.length - 1]?.id"
               class="typing-cursor"
             >▋</span>
-          </div>
           <div class="message-time">
             {{ msg.timestamp.toLocaleTimeString() }}
           </div>
@@ -564,6 +579,65 @@ const switchTab = (tab: 'chat' | 'documents') => {
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   word-wrap: break-word;
+  line-height: 1.6; /* 增加行高，更易读 */
+}
+
+/* Markdown 渲染样式 */
+.markdown-body {
+  font-size: 14px;
+  color: #333;
+}
+
+.markdown-body p {
+  margin: 0 0 10px 0;
+}
+
+.markdown-body strong {
+  font-weight: bold;
+  color: #000;
+}
+
+.markdown-body em {
+  font-style: italic;
+}
+
+.markdown-body ol, .markdown-body ul {
+  margin: 10px 0;
+  padding-left: 24px;
+}
+
+.markdown-body li {
+  margin: 5px 0;
+}
+
+.markdown-body code {
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', Monaco, monospace;
+  font-size: 13px;
+  color: #e83e8c;
+}
+
+.markdown-body pre {
+  background: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+
+.markdown-body pre code {
+  background: none;
+  padding: 0;
+  color: #333;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid #ddd;
+  padding-left: 12px;
+  margin: 10px 0;
+  color: #666;
 }
 
 .message.user .message-text {
