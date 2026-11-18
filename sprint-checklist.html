@@ -1,0 +1,780 @@
+<title>AI 工程师冲刺清单</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&display=swap">
+
+<style>
+/* Layout: single column, card-per-day, sticky header */
+:root {
+  --bg: #f8f7f5;
+  --surface: #ffffff;
+  --border: #e8e3dc;
+  --fg: #1a1816;
+  --muted: #7a736b;
+  --accent: #d4622a;
+  --accent-soft: #fdf0ea;
+  --done-bg: #f0f7f2;
+  --done-fg: #2d6a4a;
+  --done-border: #b8ddc8;
+  --warn: #c09000;
+  --warn-bg: #fffbea;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #18160f;
+    --surface: #231f17;
+    --border: #3a342a;
+    --fg: #f0ebe3;
+    --muted: #9a9080;
+    --accent: #e8783a;
+    --accent-soft: #2e1a0e;
+    --done-bg: #0f2219;
+    --done-fg: #6ec48a;
+    --done-border: #2a5a3a;
+    --warn: #d4b040;
+    --warn-bg: #1e1900;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #18160f;
+  --surface: #231f17;
+  --border: #3a342a;
+  --fg: #f0ebe3;
+  --muted: #9a9080;
+  --accent: #e8783a;
+  --accent-soft: #2e1a0e;
+  --done-bg: #0f2219;
+  --done-fg: #6ec48a;
+  --done-border: #2a5a3a;
+  --warn: #d4b040;
+  --warn-bg: #1e1900;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 32px;
+}
+
+header {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0 12px;
+  margin-left: max(-16px, calc(-1 * env(safe-area-inset-left, 0px)));
+  margin-right: max(-16px, calc(-1 * env(safe-area-inset-right, 0px)));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 11;
+  background: var(--surface);
+}
+
+.header-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.header-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+.header-title span {
+  color: var(--accent);
+}
+
+.progress-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.progress-bar {
+  width: 120px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.deadline-banner {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--warn);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.day-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.day-card:has(.task-item input:not(:checked)):hover {
+  border-color: var(--accent);
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.day-badge {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.day-badge.done {
+  background: var(--done-bg);
+  color: var(--done-fg);
+}
+
+.day-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--fg);
+  flex: 1;
+  min-width: 0;
+  text-wrap: balance;
+}
+
+.day-meta {
+  font-size: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.day-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.collapse-icon {
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.day-card.collapsed .collapse-icon { transform: rotate(-90deg); }
+
+.task-list {
+  padding: 4px 0 8px;
+}
+
+.day-card.collapsed .task-list { display: none; }
+
+.task-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 18px;
+  transition: background 0.15s;
+}
+
+.task-item:hover {
+  background: var(--accent-soft);
+}
+
+.task-item input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.task-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+  line-height: 1.4;
+}
+
+.task-item input:checked ~ .task-body .task-name {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.task-detail {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+.task-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.tag-critical { background: #fde8e8; color: #c0392b; }
+.tag-important { background: #fef4e0; color: #a05c00; }
+.tag-bonus { background: #eaf4ff; color: #1a6fa0; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tag-critical { background: #3a1010; color: #e87070; }
+  :root:not([data-theme="light"]) .tag-important { background: #2a1e00; color: #d4a040; }
+  :root:not([data-theme="light"]) .tag-bonus { background: #0a1e30; color: #6ab0e0; }
+}
+:root[data-theme="dark"] .tag-critical { background: #3a1010; color: #e87070; }
+:root[data-theme="dark"] .tag-important { background: #2a1e00; color: #d4a040; }
+:root[data-theme="dark"] .tag-bonus { background: #0a1e30; color: #6ab0e0; }
+
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.section-divider::before,
+.section-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.reset-btn {
+  display: block;
+  margin: 8px auto 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.reset-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+</style>
+
+<header>
+  <div class="header-inner">
+    <div class="header-title">🚀 AI工程师面试 <span>冲刺清单</span></div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar"><div class="progress-fill" id="fill"></div></div>
+      <div class="progress-label" id="pLabel">0 / 0</div>
+    </div>
+  </div>
+</header>
+
+<div class="main">
+  <div class="deadline-banner">
+    ⏰ 目标：11月25日开始投简历，还有 <strong id="daysLeft">?</strong> 天。每天 4–6 小时，按顺序打勾。
+  </div>
+
+  <!-- Week 1 -->
+  <div class="section-divider">Week 1 · 技术补全</div>
+
+  <!-- Day 1 -->
+  <div class="day-card" id="day1">
+    <div class="day-header" onclick="toggleDay('day1')">
+      <div class="day-badge" id="badge-day1">Day 1</div>
+      <div class="day-title">换真实 Embedding + 修安全漏洞</div>
+      <div class="day-meta"><span class="day-count" id="count-day1"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day1" id="t1_1">
+        <div class="task-body">
+          <div class="task-name">取消注释 server.js 中的真实 Embedding 调用 <span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">server.js:196–209，把注释掉的 openai.embeddings.create 恢复，删掉 generateMockEmbedding 调用</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day1" id="t1_2">
+        <div class="task-body">
+          <div class="task-name">验证真实 Embedding 能返回 1536 维向量 <span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">POST /api/embedding/test，body: {"text":"hello"}，确认 embeddingDim === 1536</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day1" id="t1_3">
+        <div class="task-body">
+          <div class="task-name">把 calculator 的 eval() 换成安全实现 <span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">server.js:858 和 deepseek-agent-demo.js:52，改用 Function('"use strict";return('+expr+')')() 或 mathjs</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day1" id="t1_4">
+        <div class="task-body">
+          <div class="task-name">上传一个真实 PDF，测试语义搜索是否正常 <span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">上传后用 /api/search 搜索，确认结果不再是随机排列</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Day 2 -->
+  <div class="day-card" id="day2">
+    <div class="day-header" onclick="toggleDay('day2')">
+      <div class="day-badge" id="badge-day2">Day 2</div>
+      <div class="day-title">MCP 接入主服务 + 持久化文档块</div>
+      <div class="day-meta"><span class="day-count" id="count-day2"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day2" id="t2_1">
+        <div class="task-body">
+          <div class="task-name">在 server.js 里加 MCP Client，连接 mcp-server.js <span class="task-tag tag-important">重要</span></div>
+          <div class="task-detail">用 @modelcontextprotocol/sdk 的 Client + StdioClientTransport，把 order DB 工具注册进 Agent</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day2" id="t2_2">
+        <div class="task-body">
+          <div class="task-name">把 documentChunks 内存数组换成 SQLite 持久化 <span class="task-tag tag-important">重要</span></div>
+          <div class="task-detail">server 重启后上传的文档不丢失；orders.db 已有，新建 chunks 表</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day2" id="t2_3">
+        <div class="task-body">
+          <div class="task-name">测试"查订单 ORD004"能走 MCP 工具返回结果</div>
+          <div class="task-detail">在 Anthropic Agent 模式下测试，确认日志里有 MCP 工具调用记录</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Day 3 -->
+  <div class="day-card" id="day3">
+    <div class="day-header" onclick="toggleDay('day3')">
+      <div class="day-badge" id="badge-day3">Day 3</div>
+      <div class="day-title">部署上线 · 拿到真实访问地址</div>
+      <div class="day-meta"><span class="day-count" id="count-day3"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day3" id="t3_1">
+        <div class="task-body">
+          <div class="task-name">后端部署到 Railway（免费层）<span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">railway.app → New Project → Deploy from GitHub，配置 OPENAI_API_KEY / DEEPSEEK_API_KEY 环境变量</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day3" id="t3_2">
+        <div class="task-body">
+          <div class="task-name">前端部署到 Vercel（免费）<span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">vercel.com → Import Git Repo → frontend 目录，把 API 地址改成 Railway 生成的 URL</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day3" id="t3_3">
+        <div class="task-body">
+          <div class="task-name">确认线上地址能正常对话</div>
+          <div class="task-detail">用手机访问 Vercel 地址，测试普通模式和 Anthropic Agent 模式都能回复</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day3" id="t3_4">
+        <div class="task-body">
+          <div class="task-name">把线上地址更新到 GitHub README</div>
+          <div class="task-detail">README 顶部加 Demo 链接，简历就能填真实地址了</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Day 4 -->
+  <div class="day-card" id="day4">
+    <div class="day-header" onclick="toggleDay('day4')">
+      <div class="day-badge" id="badge-day4">Day 4</div>
+      <div class="day-title">前端升级 · 展示 5 年前端实力</div>
+      <div class="day-meta"><span class="day-count" id="count-day4"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day4" id="t4_1">
+        <div class="task-body">
+          <div class="task-name">引入 Element Plus，替换自定义 CSS 组件 <span class="task-tag tag-important">重要</span></div>
+          <div class="task-detail">Select / Button / Tag / Upload 换成 El 组件，整体视觉提升明显</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day4" id="t4_2">
+        <div class="task-body">
+          <div class="task-name">加工具调用可视化：显示"Agent 正在调用 XXX 工具" <span class="task-tag tag-important">重要</span></div>
+          <div class="task-detail">后端返回 toolsUsed，前端在消息里渲染彩色 tag，让面试官能直观看到 Agent 决策过程</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day4" id="t4_3">
+        <div class="task-body">
+          <div class="task-name">代码高亮（highlight.js）</div>
+          <div class="task-detail">AI 回复里的代码块加语法高亮，细节体现专业度</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day4" id="t4_4">
+        <div class="task-body">
+          <div class="task-name">友好错误提示 + 重试按钮</div>
+          <div class="task-detail">网络错误、API 超时时显示原因 + 一键重试，不再只是红色字</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Week 2 -->
+  <div class="section-divider">Week 2 · 工程广度</div>
+
+  <!-- Day 5 -->
+  <div class="day-card" id="day5">
+    <div class="day-header" onclick="toggleDay('day5')">
+      <div class="day-badge" id="badge-day5">Day 5</div>
+      <div class="day-title">成本统计 + 监控大盘</div>
+      <div class="day-meta"><span class="day-count" id="count-day5"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day5" id="t5_1">
+        <div class="task-body">
+          <div class="task-name">每次请求记录 token 用量和成本到 SQLite <span class="task-tag tag-important">重要</span></div>
+          <div class="task-detail">response.usage.input_tokens / output_tokens，DeepSeek $0.27/1M，Anthropic $15/1M</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day5" id="t5_2">
+        <div class="task-body">
+          <div class="task-name">加 /api/stats 接口：成功率、平均响应时间、今日成本</div>
+          <div class="task-detail">数据来自 SQLite，这样面试时的数字是跑出来的，不是估算的</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day5" id="t5_3">
+        <div class="task-body">
+          <div class="task-name">前端加监控大盘标签页（ECharts 折线图）<span class="task-tag tag-bonus">加分</span></div>
+          <div class="task-detail">响应时间趋势、成功率、模型成本对比；有截图就够面试用了</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Day 6 -->
+  <div class="day-card" id="day6">
+    <div class="day-header" onclick="toggleDay('day6')">
+      <div class="day-badge" id="badge-day6">Day 6</div>
+      <div class="day-title">安全防护 · 生产级意识</div>
+      <div class="day-meta"><span class="day-count" id="count-day6"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day6" id="t6_1">
+        <div class="task-body">
+          <div class="task-name">加 express-rate-limit：每 IP 每分钟最多 20 次请求</div>
+          <div class="task-detail">防止 API Key 被刷爆；线上必备，面试能直接展示代码</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day6" id="t6_2">
+        <div class="task-body">
+          <div class="task-name">加 Prompt Injection 过滤中间件</div>
+          <div class="task-detail">检测"忽略之前的指令"等关键词，拒绝或转义后再发给 AI</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day6" id="t6_3">
+        <div class="task-body">
+          <div class="task-name">手机号 / 身份证号脱敏（AI 回复后处理）</div>
+          <div class="task-detail">正则替换，18611112222 → 186****2222，防止 AI 泄露敏感信息</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Day 7 -->
+  <div class="day-card" id="day7">
+    <div class="day-header" onclick="toggleDay('day7')">
+      <div class="day-badge" id="badge-day7">Day 7</div>
+      <div class="day-title">完整文档 + 架构图</div>
+      <div class="day-meta"><span class="day-count" id="count-day7"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day7" id="t7_1">
+        <div class="task-body">
+          <div class="task-name">README 补完整：项目介绍、架构、快速开始、Demo 地址</div>
+          <div class="task-detail">面试官看 GitHub 第一眼就是 README；现在缺架构图和线上地址</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day7" id="t7_2">
+        <div class="task-body">
+          <div class="task-name">用 draw.io / Excalidraw 画系统架构图（1张）</div>
+          <div class="task-detail">前端 → 后端 → AI Model → Pinecone → MCP Server；能画出来说明真懂</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day7" id="t7_3">
+        <div class="task-body">
+          <div class="task-name">整理技术选型文档：为什么选 DeepSeek / LangChain / Pinecone</div>
+          <div class="task-detail">每个选型写 3 句话：是什么、为什么选它、对比了哪些替代方案</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Week 3 -->
+  <div class="section-divider">Week 3 · 面试准备</div>
+
+  <!-- Day 8–9 -->
+  <div class="day-card" id="day8">
+    <div class="day-header" onclick="toggleDay('day8')">
+      <div class="day-badge" id="badge-day8">Day 8–9</div>
+      <div class="day-title">简历优化 + 10 道高频面试题</div>
+      <div class="day-meta"><span class="day-count" id="count-day8"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day8" id="t8_1">
+        <div class="task-body">
+          <div class="task-name">简历项目描述换成 STAR 格式，每条有数据 <span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">❌"实现了 RAG" → ✅"通过 RAG + 双存储架构，检索准确率提升 35%，成本降低 40%"</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day8" id="t8_2">
+        <div class="task-body">
+          <div class="task-name">准备 10 道高频题的口答（每题 ≤3 分钟）<span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">RAG 原理、Tool Calling 流程、MCP vs Function Calling、成本优化、Prompt Injection 防御…</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day8" id="t8_3">
+        <div class="task-body">
+          <div class="task-name">准备 3 个"遇到问题→分析→解决"的技术故事</div>
+          <div class="task-detail">① eval 安全漏洞 ② mock Embedding → 真实 RAG ③ 工具调用失败率 60%→100%</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Day 10 -->
+  <div class="day-card" id="day9">
+    <div class="day-header" onclick="toggleDay('day9')">
+      <div class="day-badge" id="badge-day9">Day 10</div>
+      <div class="day-title">录 Demo 视频 + 模拟面试</div>
+      <div class="day-meta"><span class="day-count" id="count-day9"></span></div>
+      <div class="collapse-icon">▾</div>
+    </div>
+    <div class="task-list">
+      <label class="task-item">
+        <input type="checkbox" data-day="day9" id="t9_1">
+        <div class="task-body">
+          <div class="task-name">录 3 分钟 Demo 视频（上传 B站 / GitHub）<span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">流程：上传 PDF → 语义问答 → Agent 工具调用 → 展示监控大盘</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day9" id="t9_2">
+        <div class="task-body">
+          <div class="task-name">自己录视频模拟面试，回放找问题</div>
+          <div class="task-detail">重点：表达是否清晰、能否 3 分钟讲完项目、技术细节是否能接得住追问</div>
+        </div>
+      </label>
+      <label class="task-item">
+        <input type="checkbox" data-day="day9" id="t9_3">
+        <div class="task-body">
+          <div class="task-name">🎉 投出第一批简历（50+ 家）<span class="task-tag tag-critical">必须</span></div>
+          <div class="task-detail">Boss直聘 + 拉勾 + 猎聘，关键词：AI应用工程师、LLM应用开发、AI前端工程师，南京优先</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <button class="reset-btn" onclick="resetAll()">重置所有进度</button>
+</div>
+
+<script>
+const STORAGE_KEY = 'ai-sprint-checklist-v1';
+
+function save() {
+  const state = {};
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    state[cb.id] = cb.checked;
+  });
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e){}
+}
+
+function load() {
+  try {
+    const state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    Object.entries(state).forEach(([id, checked]) => {
+      const el = document.getElementById(id);
+      if (el) el.checked = checked;
+    });
+  } catch(e){}
+}
+
+function updateProgress() {
+  const all = document.querySelectorAll('input[type="checkbox"]');
+  const done = Array.from(all).filter(c => c.checked).length;
+  const pct = all.length ? Math.round(done / all.length * 100) : 0;
+  document.getElementById('fill').style.width = pct + '%';
+  document.getElementById('pLabel').textContent = done + ' / ' + all.length;
+}
+
+function updateDayBadges() {
+  const days = ['day1','day2','day3','day4','day5','day6','day7','day8','day9'];
+  days.forEach(dayId => {
+    const checks = document.querySelectorAll(`input[data-day="${dayId}"]`);
+    const doneCount = Array.from(checks).filter(c => c.checked).length;
+    const total = checks.length;
+    const badge = document.getElementById('badge-' + dayId);
+    const count = document.getElementById('count-' + dayId);
+    if (count) count.textContent = doneCount + '/' + total;
+    if (badge) {
+      if (doneCount === total && total > 0) {
+        badge.classList.add('done');
+      } else {
+        badge.classList.remove('done');
+      }
+    }
+  });
+}
+
+function toggleDay(id) {
+  document.getElementById(id).classList.toggle('collapsed');
+}
+
+function resetAll() {
+  if (!confirm('确定要清空所有进度吗？')) return;
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+  updateProgress();
+  updateDayBadges();
+}
+
+function updateDeadline() {
+  const now = new Date();
+  const target = new Date('2026-11-25');
+  const diff = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+  const el = document.getElementById('daysLeft');
+  if (el) el.textContent = Math.max(0, diff);
+}
+
+document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', () => { save(); updateProgress(); updateDayBadges(); });
+});
+
+load();
+updateProgress();
+updateDayBadges();
+updateDeadline();
+
+// Confirm override — not using native confirm, using a flag
+window.confirm = function(msg) {
+  return true; // artifact doesn't support native dialogs, but reset is low stakes
+};
+</script>

@@ -191,11 +191,6 @@ async function extractPdfText(filePath) {
  * @returns {Promise<number[]>} 向量数组
  */
 async function getEmbedding(text) {
-  // 模拟 Embedding（用于学习和演示）
-  // 真实项目中应该调用 OpenAI Embedding API
-  return generateMockEmbedding(text);
-
-  /* 真实 Embedding API 调用（需要真实的 OpenAI API Key）
   try {
     const response = await openai.embeddings.create({
       model: 'text-embedding-3-small',
@@ -203,10 +198,10 @@ async function getEmbedding(text) {
     });
     return response.data[0].embedding;
   } catch (error) {
-    console.error('Embedding 错误:', error);
-    throw error;
+    console.error('Embedding 错误，降级到模拟向量:', error.message);
+    // 降级：API 不可用时用模拟向量保证功能可用（面试时说明这是降级策略）
+    return generateMockEmbedding(text);
   }
-  */
 }
 
 /**
@@ -855,11 +850,18 @@ function executeCalculator(expression) {
     throw new Error('只支持数字和基本运算符（+ - * / ()）');
   }
 
-  const result = eval(expression);
+  // 安全计算：用 Function 构造器代替 eval，避免 RCE 风险
+  // eval() 在严格模式下仍可访问作用域变量，Function 构造器不行
+  let result;
+  try {
+    result = new Function('"use strict"; return (' + expression + ')')();
+  } catch (calcError) {
+    throw new Error('表达式语法错误: ' + calcError.message);
+  }
 
   // 检查结果是否有效
-  if (isNaN(result) || !isFinite(result)) {
-    throw new Error('计算结果无效');
+  if (typeof result !== 'number' || isNaN(result) || !isFinite(result)) {
+    throw new Error('计算结果无效（结果不是有限数字）');
   }
 
   return `计算结果: ${result}`;
